@@ -218,6 +218,8 @@ ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を�
 
 Chat は Electron Main が所有する ACP stdio bridge を使用します。Renderer は型付き host event を受け取り、メモリ上の ACP timeline を描画します。Gateway は providers、models、skills、workspace、settings、diagnostics、media configuration などの非 Chat 機能を引き続き担当します。
 
+ACP Chat は、runtime が画像生成メディアを信頼できる構造化メディアとして配信した場合に、生成画像のプレビューを表示できます。`MEDIA: /path/to/file.png` のような単なるローカルパスのテキストはプレビューとして扱われません。ClawX は Renderer から任意にファイルシステムへアクセスするのではなく、Electron Main のホストメディア処理を通じてプレビューを読み込みます。標準 ACP 画像コンテンツは引き続き推奨パスであり、そのまま描画されます。
+
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │                        ClawX デスクトップアプリ                       │

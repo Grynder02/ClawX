@@ -7,13 +7,31 @@ import type {
   AcpPermissionRequestEnvelope,
   AcpSessionUpdateEnvelope,
 } from '@shared/acp-chat/types';
+import type { MediaThumbnailEntry, MediaThumbnailResult } from '@shared/host-api/contract';
+import i18n from '@/i18n';
+import {
+  extractImageGenerationCompletionFromGatewayChatMessage,
+  extractImageGenerationCompletionFromRuntimeEvent,
+  extractImageGenerationStartFromAcpEnvelope,
+  imageGenerationEvidenceKey,
+  type ImageGenerationCompletionEvidence,
+  type ImageGenerationMediaCandidate,
+} from '@/lib/acp/image-generation-compat';
+import { appendSyntheticAssistantMessage, applyAcpSessionUpdate, createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import { applyAcpSessionUpdate, createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPart } from '@/lib/acp/timeline-types';
 
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
+const IMAGE_GENERATION_COMPAT_WINDOW_MS = 195_000;
+
+type ImageGenerationCompatSession = {
+  taskStartedAt: number;
+  delivered: Set<string>;
+};
+
+const imageGenerationCompatSessions = new Map<string, ImageGenerationCompatSession>();
 
 type PermissionOutcome = AcpChatRespondPermissionPayload['outcome'];
 
@@ -32,6 +50,8 @@ export type AcpChatSessionState = {
   respondPermission: (requestId: string, optionId: string) => Promise<void>;
   applyUpdateEnvelope: (event: AcpSessionUpdateEnvelope) => void;
   applyPermissionRequest: (event: AcpPermissionRequestEnvelope) => void;
+  recordImageGenerationStart: (event: AcpSessionUpdateEnvelope) => void;
+  projectImageGenerationCompletion: (event: ImageGenerationCompletionEvidence) => Promise<void>;
   clearError: () => void;
 };
 
@@ -53,6 +73,54 @@ function permissionOutcome(optionId: string): PermissionOutcome {
 
 function permissionStatus(outcome: PermissionOutcome): PermissionItem['status'] {
   return outcome.outcome === 'cancelled' ? 'cancelled' : 'selected';
+}
+
+function compatSession(sessionKey: string): ImageGenerationCompatSession {
+  const existing = imageGenerationCompatSessions.get(sessionKey);
+  if (existing) return existing;
+
+  const created: ImageGenerationCompatSession = { taskStartedAt: 0, delivered: new Set<string>() };
+  imageGenerationCompatSessions.set(sessionKey, created);
+  return created;
+}
+
+function resetImageGenerationCompatSession(sessionKey: string): void {
+  imageGenerationCompatSessions.delete(sessionKey);
+}
+
+function hasFreshImageGenerationContext(sessionKey: string, now = Date.now()): boolean {
+  const session = imageGenerationCompatSessions.get(sessionKey);
+  if (!session?.taskStartedAt) return false;
+  return now - session.taskStartedAt <= IMAGE_GENERATION_COMPAT_WINDOW_MS;
+}
+
+function reserveDelivery(sessionKey: string, key: string): boolean {
+  const session = compatSession(sessionKey);
+  if (session.delivered.has(key)) return false;
+  session.delivered.add(key);
+  return true;
+}
+
+function thumbnailEntry(candidate: ImageGenerationMediaCandidate): MediaThumbnailEntry {
+  if (candidate.gatewayUrl) {
+    return {
+      gatewayUrl: candidate.gatewayUrl,
+      ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+    };
+  }
+
+  return {
+    filePath: candidate.filePath ?? candidate.key,
+    ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+  };
+}
+
+function messageIdFromEvidence(key: string): string {
+  const encoded: string[] = [];
+  for (let index = 0; index < key.length; index += 1) {
+    encoded.push(key.charCodeAt(index).toString(16).padStart(4, '0'));
+  }
+  return `compat:image-generation:${encoded.join('')}`;
 }
 
 function isCurrentAction(
@@ -186,6 +254,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
   async loadSession(input) {
     const localGeneration = get().generation + 1;
+    resetImageGenerationCompatSession(input.sessionKey);
     set({
       activeSessionKey: input.sessionKey,
       cwd: input.cwd,
@@ -335,10 +404,76 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     }
   },
 
+  recordImageGenerationStart(event) {
+    const state = get();
+    if (event.historical) return;
+    if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
+
+    const start = extractImageGenerationStartFromAcpEnvelope(event);
+    if (!start) return;
+    compatSession(start.sessionKey).taskStartedAt = Date.now();
+  },
+
+  async projectImageGenerationCompletion(evidence) {
+    const state = get();
+    const sessionKey = evidence.sessionKey ?? state.activeSessionKey;
+    if (!sessionKey || sessionKey !== state.activeSessionKey) return;
+    if (!hasFreshImageGenerationContext(sessionKey)) return;
+    if (evidence.candidates.length === 0) return;
+
+    const generation = state.generation;
+    const key = imageGenerationEvidenceKey({ ...evidence, sessionKey });
+    if (!reserveDelivery(sessionKey, key)) return;
+
+    let thumbnails: MediaThumbnailResult = {};
+    try {
+      thumbnails = await hostApi.media.thumbnails({
+        paths: evidence.candidates.map(thumbnailEntry),
+      });
+    } catch {
+      thumbnails = {};
+    }
+
+    const latest = get();
+    if (latest.activeSessionKey !== sessionKey || latest.generation !== generation) return;
+
+    const imageParts: RenderPart[] = [];
+    for (const candidate of evidence.candidates) {
+      const resolved = thumbnails[candidate.key];
+      if (!resolved?.preview) continue;
+      imageParts.push({
+        kind: 'image',
+        source: resolved.preview,
+        ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+        alt: i18n.t('chat:acp.image'),
+      });
+    }
+
+    const missingCount = evidence.candidates.length - imageParts.length;
+    const caption = imageParts.length === 0
+      ? i18n.t('chat:imageGeneration.previewUnavailable')
+      : missingCount > 0
+        ? i18n.t('chat:imageGeneration.generatedReadyWithMissing')
+        : i18n.t('chat:imageGeneration.generatedReady');
+    const parts: RenderPart[] = [{ kind: 'markdown', text: caption }, ...imageParts];
+
+    set((current) => {
+      if (current.activeSessionKey !== sessionKey || current.generation !== generation) return {};
+      return {
+        timeline: appendSyntheticAssistantMessage(current.timeline, {
+          messageId: messageIdFromEvidence(key),
+          evidenceId: key,
+          parts,
+        }),
+      };
+    });
+  },
+
   applyUpdateEnvelope(event) {
     const state = get();
     if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
     set({ timeline: applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical }) });
+    get().recordImageGenerationStart(event);
   },
 
   applyPermissionRequest(event) {
@@ -388,5 +523,13 @@ export function ensureAcpChatSubscriptions(): void {
   });
   hostEvents.onAcpPermissionRequest((event) => {
     useAcpChatSessionStore.getState().applyPermissionRequest(event);
+  });
+  hostEvents.onGatewayChatMessage((event) => {
+    const evidence = extractImageGenerationCompletionFromGatewayChatMessage(event);
+    if (evidence) void useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+  });
+  hostEvents.onChatRuntimeEvent((event) => {
+    const evidence = extractImageGenerationCompletionFromRuntimeEvent(event);
+    if (evidence) void useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
   });
 }

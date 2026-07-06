@@ -233,6 +233,34 @@ function replaceMessage(
   };
 }
 
+export function appendSyntheticAssistantMessage(
+  snapshot: AcpTimelineSnapshot,
+  input: {
+    messageId: string;
+    evidenceId: string;
+    parts: RenderPart[];
+  },
+): AcpTimelineSnapshot {
+  const id = `${input.messageId}:0`;
+  const item: MessageSegmentItem = {
+    kind: 'message-segment',
+    id,
+    role: 'assistant',
+    messageId: input.messageId,
+    segmentIndex: 0,
+    parts: input.parts,
+    compat: { source: 'image-generation', evidenceId: input.evidenceId },
+  };
+
+  const closed = closeAllMessageSegments(snapshot);
+  return {
+    ...closed,
+    itemOrder: closed.itemOrder.includes(id) ? closed.itemOrder : [...closed.itemOrder, id],
+    itemsById: { ...closed.itemsById, [id]: item },
+    segmentCounts: { ...closed.segmentCounts, [input.messageId]: 1 },
+  };
+}
+
 function normalizeToolStatus(status: ToolCallStatus | null | undefined): ToolCallItem['status'] {
   if (status === 'in_progress') return 'running';
   if (status === 'completed') return 'completed';
