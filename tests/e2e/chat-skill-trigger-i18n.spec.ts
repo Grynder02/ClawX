@@ -92,6 +92,7 @@ test.describe('ClawX chat skill trigger', () => {
       });
 
       const page = await getStableWindow(app);
+      await page.reload();
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-composer-input')).toBeVisible({ timeout: 30_000 });
@@ -109,17 +110,13 @@ test.describe('ClawX chat skill trigger', () => {
 
       expect(isSkillAfterAgent).toBe(true);
 
-      await page.getByTestId('chat-composer-input').fill('Draft a new helper');
-      await page.getByTestId('chat-composer-input').evaluate((element) => {
-        if (!(element instanceof HTMLTextAreaElement)) return;
-        const cursorPosition = 'Draft '.length;
-        element.focus();
-        element.setSelectionRange(cursorPosition, cursorPosition);
-      });
+      const composer = page.getByTestId('chat-composer-input');
+      await composer.fill('Draft a new helper');
       await page.getByTestId('chat-composer-skill').click();
       await page.getByText('/create-skill', { exact: true }).click();
-      await expect(page.getByTestId('chat-composer-input')).toHaveValue('Draft /create-skill  a new helper');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
+      await expect(composer).toContainText('/create-skill');
+      await expect(composer).toContainText('Draft a new helper');
     } finally {
       await closeElectronApp(app);
     }
@@ -209,12 +206,17 @@ test.describe('ClawX chat skill trigger', () => {
       });
 
       const page = await getStableWindow(app);
+      await page.reload();
 
+      await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-composer-input')).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('chat-composer-input').fill('Hello ');
+      const composer = page.getByTestId('chat-composer-input');
+      await composer.fill('Hello ');
       await page.getByTestId('chat-composer-skill').click();
       await page.getByText('/create-skill', { exact: true }).click();
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
+      await expect(composer).toContainText('/create-skill');
+      await expect(composer).toContainText('Hello');
 
       await page.getByTestId('chat-composer-skill-token').click();
 

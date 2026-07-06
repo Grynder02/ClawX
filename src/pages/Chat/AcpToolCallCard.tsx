@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Loader2, Wrench, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
@@ -42,35 +42,29 @@ function AcpToolOutputPart({ part }: { part: RenderPart }) {
 
 export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
   const { t } = useTranslation('chat');
+  const [expandedOverride, setExpandedOverride] = useState<{ toolCallId: string; expanded: boolean } | null>(null);
+  const [autoCollapsedToolCallId, setAutoCollapsedToolCallId] = useState<string | null>(null);
   const hasDetails = Boolean(item.error) || item.outputParts.length > 0;
-  const shouldStartExpanded = !hasDetails || !(item.historical && item.status === 'completed');
-  const [expanded, setExpanded] = useState(() => shouldStartExpanded);
-  const [manualOverride, setManualOverride] = useState(false);
-  const lastToolCallIdRef = useRef(item.toolCallId);
-
-  useEffect(() => {
-    if (lastToolCallIdRef.current === item.toolCallId) return;
-    lastToolCallIdRef.current = item.toolCallId;
-    setExpanded(shouldStartExpanded);
-    setManualOverride(false);
-  }, [item.toolCallId, shouldStartExpanded]);
+  const manualOverride = expandedOverride?.toolCallId === item.toolCallId;
+  const expanded = !hasDetails
+    || item.status !== 'completed'
+    || (manualOverride
+      ? expandedOverride.expanded
+      : !item.historical && autoCollapsedToolCallId !== item.toolCallId);
 
   useEffect(() => {
     if (!hasDetails) {
-      setExpanded(true);
       return;
     }
     if (manualOverride) return;
     if (item.historical && item.status === 'completed') {
-      setExpanded(false);
       return;
     }
     if (item.status !== 'completed') {
-      setExpanded(true);
       return;
     }
 
-    const timer = window.setTimeout(() => setExpanded(false), TOOL_AUTO_COLLAPSE_DELAY_MS);
+    const timer = window.setTimeout(() => setAutoCollapsedToolCallId(item.toolCallId), TOOL_AUTO_COLLAPSE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [hasDetails, item.historical, item.status, item.toolCallId, manualOverride]);
 
@@ -88,8 +82,7 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
             type="button"
             data-testid="acp-tool-toggle"
             onClick={() => {
-              setManualOverride(true);
-              setExpanded((value) => !value);
+              setExpandedOverride({ toolCallId: item.toolCallId, expanded: !expanded });
             }}
             aria-expanded={expanded}
             aria-label={toggleLabel}

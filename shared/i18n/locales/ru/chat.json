@@ -191,6 +191,7 @@
     },
     "composer": {
         "attachFiles": "Прикрепить файлы",
+        "inputLabel": "Поле ввода сообщения",
         "pickSkill": "Выбрать Skill",
         "skillButton": "Skills",
         "skillPickerTitle": "Быстрый доступ к Skill для {{agent}}",
@@ -204,6 +205,8 @@
         "clearTarget": "Очистить целевого агента",
         "targetChip": "@{{agent}}",
         "agentPickerTitle": "Направить следующее сообщение другому агенту",
+        "agentEmpty": "Нет доступных других агентов",
+        "prefixMenuAriaLabel": "Подсказки ввода",
         "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
         "send": "Отправить",
         "stop": "Остановить",

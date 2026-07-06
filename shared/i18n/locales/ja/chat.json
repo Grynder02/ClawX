@@ -191,6 +191,7 @@
     },
     "composer": {
         "attachFiles": "ファイルを添付",
+        "inputLabel": "メッセージ入力欄",
         "pickSkill": "Skill を選択",
         "skillButton": "Skills",
         "skillPickerTitle": "{{agent}} のクイック Skill",
@@ -204,6 +205,8 @@
         "clearTarget": "送信先 Agent をクリア",
         "targetChip": "@{{agent}}",
         "agentPickerTitle": "次のメッセージを別の Agent に直接送信します",
+        "agentEmpty": "利用できる他の Agent はありません",
+        "prefixMenuAriaLabel": "入力候補",
         "gatewayDisconnectedPlaceholder": "ゲートウェイ未接続...",
         "send": "送信",
         "stop": "停止",

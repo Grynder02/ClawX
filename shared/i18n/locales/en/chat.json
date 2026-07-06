@@ -191,6 +191,7 @@
     },
     "composer": {
         "attachFiles": "Attach files",
+        "inputLabel": "Message input",
         "pickSkill": "Choose skill",
         "skillButton": "Skills",
         "skillPickerTitle": "Quick skill access for {{agent}}",
@@ -202,6 +203,8 @@
         "clearTarget": "Clear target agent",
         "targetChip": "@{{agent}}",
         "agentPickerTitle": "Route the next message to another agent",
+        "agentEmpty": "No other Agents available",
+        "prefixMenuAriaLabel": "Composer suggestions",
         "modelPickerTitle": "Switch model for this chat",
         "modelSwitchFailed": "Failed to switch model: {{error}}",
         "gatewayDisconnectedPlaceholder": "Gateway not connected...",

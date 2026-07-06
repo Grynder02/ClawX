@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
@@ -20,6 +21,7 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
   providersState: {
     accounts: [] as Array<Record<string, unknown>>,
     statuses: [] as Array<Record<string, unknown>>,
+    vendors: [] as Array<Record<string, unknown>>,
     defaultAccountId: null as string | null,
     refreshProviderSnapshot: vi.fn(),
   },
@@ -79,6 +81,51 @@ vi.mock('sonner', () => ({
   },
 }));
 
+const mainAgent = {
+  id: 'main',
+  name: 'Main',
+  isDefault: true,
+  modelDisplay: 'MiniMax',
+  inheritedModel: true,
+  workspace: '~/.openclaw/workspace',
+  agentDir: '~/.openclaw/agents/main/agent',
+  mainSessionKey: 'agent:main:main',
+  channelTypes: [],
+};
+
+const researchAgent = {
+  id: 'research',
+  name: 'Research',
+  isDefault: false,
+  modelDisplay: 'Claude',
+  inheritedModel: false,
+  workspace: '~/.openclaw/workspace-research',
+  agentDir: '~/.openclaw/agents/research/agent',
+  mainSessionKey: 'agent:research:desk',
+  channelTypes: [],
+};
+
+const createSkill = {
+  name: 'create-skill',
+  description: 'Create and refine reusable skills.',
+  source: 'workspace',
+  sourceLabel: 'Workspace',
+  manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+  baseDir: '/tmp/workspace/skill/create-skill',
+};
+
+const emptyRect = {
+  bottom: 0,
+  height: 0,
+  left: 0,
+  right: 0,
+  top: 0,
+  width: 0,
+  x: 0,
+  y: 0,
+  toJSON: () => ({}),
+} as DOMRect;
+
 function translate(key: string, vars?: Record<string, unknown>): string {
   switch (key) {
     case 'composer.attachFiles':
@@ -87,6 +134,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Choose skill';
     case 'composer.skillButton':
       return 'Skill';
+    case 'composer.inputLabel':
+      return 'Message input';
     case 'composer.skillPickerTitle':
       return `Quick skill access for ${String(vars?.agent ?? '')}`;
     case 'composer.skillSearchPlaceholder':
@@ -103,6 +152,10 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return `@${String(vars?.agent ?? '')}`;
     case 'composer.agentPickerTitle':
       return 'Route the next message to another agent';
+    case 'composer.agentEmpty':
+      return 'No other Agents available';
+    case 'composer.prefixMenuAriaLabel':
+      return 'Composer suggestions';
     case 'composer.gatewayDisconnectedPlaceholder':
       return 'Gateway not connected...';
     case 'composer.send':
@@ -129,6 +182,18 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Preview SKILL.md';
     case 'composer.skillPreviewNotFound':
       return 'Skill not found';
+    case 'composer.pickModel':
+      return 'Choose model';
+    case 'composer.modelPickerTitle':
+      return 'Choose model';
+    case 'composer.modelSwitchFailed':
+      return `Failed to switch model: ${String(vars?.error ?? '')}`;
+    case 'composer.folderDropUnsupported':
+      return 'Folder drops are not supported in this environment';
+    case 'composer.folderAttachment':
+      return 'Folder';
+    case 'composer.working':
+      return 'Working';
     default:
       return key;
   }
@@ -148,7 +213,100 @@ function renderChatInput(onSend = vi.fn()) {
   );
 }
 
+function mockQuickSkills(skills = [createSkill]) {
+  vi.mocked(hostApiFetchMock).mockResolvedValue({
+    success: true,
+    skills,
+  });
+}
+
+function moveSelectionToEnd(element: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  const range = document.createRange();
+  range.selectNodeContents(element.querySelector('p') ?? element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function insertTextAtSelection(element: HTMLElement, text: string) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    element.textContent = `${element.textContent ?? ''}${text}`;
+    moveSelectionToEnd(element);
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const textNode = document.createTextNode(text);
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+async function typeInComposer(text: string) {
+  const input = screen.getByTestId('chat-composer-input');
+  input.focus();
+  moveSelectionToEnd(input);
+
+  let typedText = '';
+  for (const character of Array.from(text)) {
+    const beforeInputEvent = new InputEvent('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+      data: character,
+      inputType: 'insertText',
+    });
+
+    fireEvent(input, beforeInputEvent);
+    if (!beforeInputEvent.defaultPrevented) {
+      insertTextAtSelection(input, character);
+      fireEvent.input(input, { data: character, inputType: 'insertText' });
+    }
+
+    typedText += character;
+    await waitFor(() => {
+      expect(input.textContent ?? '').toContain(typedText);
+    });
+    moveSelectionToEnd(input);
+  }
+
+  await waitFor(() => {
+    expect(input).toHaveTextContent(text);
+  });
+
+  return input;
+}
+
+async function waitForSendEnabled() {
+  await waitFor(() => {
+    expect(screen.getByTestId('chat-composer-send')).not.toBeDisabled();
+  });
+}
+
 describe('ChatInput agent targeting', () => {
+  beforeAll(() => {
+    const nodePrototype = Node.prototype as Node & { getBoundingClientRect?: () => DOMRect };
+    if (!nodePrototype.getBoundingClientRect) {
+      Object.defineProperty(nodePrototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => emptyRect,
+      });
+    }
+
+    if (!Range.prototype.getBoundingClientRect) {
+      Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => emptyRect,
+      });
+    }
+  });
+
   beforeEach(() => {
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
@@ -157,6 +315,7 @@ describe('ChatInput agent targeting', () => {
     gatewayState.status = { state: 'running', port: 18789 };
     providersState.accounts = [];
     providersState.statuses = [];
+    providersState.vendors = [];
     providersState.defaultAccountId = null;
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
@@ -350,106 +509,59 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('hides the @agent picker when only one agent is configured', () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
+    agentsState.agents = [mainAgent];
 
     renderChatInput();
 
     expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
   });
 
-  it('uses native textarea rendering when no skill token is present', () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
+  it('renders a contenteditable composer when no chip is present', async () => {
+    agentsState.agents = [mainAgent];
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '我没有填写Skill' } });
+    const textbox = screen.getByRole('textbox');
 
-    expect(textbox).toHaveValue('我没有填写Skill');
+    expect(textbox.tagName).toBe('DIV');
+    expect(textbox).toHaveAttribute('contenteditable', 'true');
+    expect(textbox).toHaveAttribute('data-lexical-editor', 'true');
+    expect(textbox).toHaveAttribute('aria-label', 'Message input');
+    expect(textbox).toHaveAttribute('aria-autocomplete', 'list');
+    expect(screen.queryByTestId('chat-composer-agent-chip')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
-    expect(textbox.className).not.toContain('text-transparent');
+
+    await typeInComposer('我没有填写Skill');
+
+    expect(textbox).toHaveTextContent('我没有填写Skill');
+    expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
   });
 
-  it('lets the user select an agent target and sends it with the message', () => {
+  it('selects an agent from the toolbar and sends only the target route with message text', async () => {
     const onSend = vi.fn();
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-      {
-        id: 'research',
-        name: 'Research',
-        isDefault: false,
-        modelDisplay: 'Claude',
-        inheritedModel: false,
-        workspace: '~/.openclaw/workspace-research',
-        agentDir: '~/.openclaw/agents/research/agent',
-        mainSessionKey: 'agent:research:desk',
-        channelTypes: [],
-      },
-    ];
+    agentsState.agents = [mainAgent, researchAgent];
 
     renderChatInput(onSend);
 
     fireEvent.click(screen.getByTitle('Choose agent'));
     fireEvent.click(screen.getByText('Research'));
 
-    expect(screen.getByText('@Research')).toBeInTheDocument();
+    expect(await screen.findByTestId('chat-composer-agent-chip')).toHaveTextContent('@Research');
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello direct agent' } });
+    await typeInComposer('Hello direct agent');
+    await waitForSendEnabled();
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
+    });
+    expect(onSend.mock.calls[0]?.[0]).not.toContain('@Research');
   });
 
-  it('keeps the ACP composer enabled while gateway is running but not yet ready', () => {
+  it('keeps the ACP composer enabled while gateway is running but not yet ready', async () => {
     const onSend = vi.fn();
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
+    agentsState.agents = [mainAgent];
     agentsState.defaultModelRef = 'custom-aaaaaaaa/gpt-a';
     const now = '2025-01-01T00:00:00.000Z';
     providersState.accounts = [
@@ -487,31 +599,24 @@ describe('ChatInput agent targeting', () => {
     renderChatInput(onSend);
 
     const input = screen.getByTestId('chat-composer-input');
-    expect(input).not.toBeDisabled();
+    expect(input).toHaveAttribute('contenteditable', 'true');
+    expect(input).toHaveAttribute('aria-disabled', 'false');
     expect(screen.getByTestId('chat-composer-skill')).not.toBeDisabled();
+    expect(screen.getByTestId('chat-model-picker-button')).toBeInTheDocument();
     expect(screen.getByTestId('chat-model-picker-button')).not.toBeDisabled();
 
-    fireEvent.change(input, { target: { value: 'Send through ACP' } });
+    await typeInComposer('Send through ACP');
+    await waitForSendEnabled();
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
+    });
   });
 
   it('shows starting status while gateway is running but not yet ready', () => {
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
+    agentsState.agents = [mainAgent];
 
     renderChatInput();
 
@@ -519,30 +624,7 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('renders the skill trigger after the @ agent picker', () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-      {
-        id: 'research',
-        name: 'Research',
-        isDefault: false,
-        modelDisplay: 'Claude',
-        inheritedModel: false,
-        workspace: '~/.openclaw/workspace-research',
-        agentDir: '~/.openclaw/agents/research/agent',
-        mainSessionKey: 'agent:research:desk',
-        channelTypes: [],
-      },
-    ];
+    agentsState.agents = [mainAgent, researchAgent];
 
     renderChatInput();
 
@@ -553,53 +635,25 @@ describe('ChatInput agent targeting', () => {
     expect(agentTrigger.compareDocumentPosition(skillTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('inserts the selected skill at the current cursor position and prefixes sends', async () => {
+  it('selects a skill from the toolbar and serializes it before message text', async () => {
     const onSend = vi.fn();
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-skill',
-          description: 'Create and refine reusable skills.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-skill',
-        },
-      ],
-    });
+    agentsState.agents = [mainAgent];
+    mockQuickSkills();
 
     renderChatInput(onSend);
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
-    textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-
     fireEvent.click(screen.getByTitle('Choose skill'));
-    expect(await screen.findByText('/create-skill')).toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-skill'));
 
-    fireEvent.click(screen.getByText('/create-skill'));
-    expect(screen.getByTestId('chat-composer-skill')).toHaveTextContent('Skill');
-    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
-    expect(screen.getByTestId('chat-composer-skill-token')).toHaveTextContent('/create-skill');
+    expect(await screen.findByTestId('chat-composer-skill-token')).toHaveTextContent('/create-skill');
 
+    await typeInComposer('Draft a new helper');
+    await waitForSendEnabled();
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined, null);
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('/create-skill Draft a new helper', undefined, null);
+    });
     expect(hostApiFetchMock).toHaveBeenCalledWith(
       '/api/skills/quick-access',
       expect.objectContaining({
@@ -609,221 +663,56 @@ describe('ChatInput agent targeting', () => {
     );
   });
 
-  it('removes the full inline skill token with one backspace', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-skill',
-          description: 'Create and refine reusable skills.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-skill',
-        },
-      ],
-    });
+  it('opens skill suggestions when / is typed at the document start', async () => {
+    agentsState.agents = [mainAgent];
+    mockQuickSkills();
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
-    textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    await typeInComposer('/');
 
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByText('/create-skill'));
-
-    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
-    textbox.setSelectionRange('Draft /create-skill  '.length, 'Draft /create-skill  '.length);
-    fireEvent.keyDown(textbox, { key: 'Backspace' });
-
-    expect(textbox).toHaveValue('Draft a new helper');
+    expect(await screen.findByTestId('chat-composer-prefix-menu')).toHaveAttribute(
+      'aria-label',
+      'Quick skill access for Main',
+    );
+    expect(await screen.findByTestId('chat-composer-skill-option-create-skill')).toHaveTextContent('/create-skill');
+    expect(hostApiFetchMock).toHaveBeenCalledWith(
+      '/api/skills/quick-access',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
-  it('skips across the inline skill block with arrow keys', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-skill',
-          description: 'Create and refine reusable skills.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-skill',
-        },
-      ],
+  it('opens agent suggestions when @ is typed and sends the selected route without mention text', async () => {
+    const onSend = vi.fn();
+    agentsState.agents = [mainAgent, researchAgent];
+
+    renderChatInput(onSend);
+
+    await typeInComposer('@');
+    fireEvent.click(await screen.findByTestId('chat-composer-agent-option-research'));
+
+    expect(await screen.findByTestId('chat-composer-agent-chip')).toHaveTextContent('@Research');
+
+    await typeInComposer('Route this');
+    await waitForSendEnabled();
+    fireEvent.click(screen.getByTitle('Send'));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('Route this', undefined, 'research');
     });
-
-    renderChatInput();
-
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
-    textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByText('/create-skill'));
-
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-    fireEvent.keyDown(textbox, { key: 'ArrowRight' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textbox.selectionStart).toBe('Draft /create-skill  '.length);
-
-    fireEvent.keyDown(textbox, { key: 'ArrowLeft' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textbox.selectionStart).toBe('Draft '.length);
-  });
-
-  it('adds left spacing when inserting a skill after adjacent text', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'docx',
-          description: 'Work with Word documents.',
-          source: 'legacy',
-          sourceLabel: 'Legacy',
-          manifestPath: '/tmp/openclaw/skills/docx/SKILL.md',
-          baseDir: '/tmp/openclaw/skills/docx',
-        },
-      ],
-    });
-
-    renderChatInput();
-
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '哈哈哈哈你好' } });
-    textbox.focus();
-    textbox.setSelectionRange('哈哈哈哈'.length, '哈哈哈哈'.length);
-
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByText('/docx'));
-
-    expect(textbox).toHaveValue('哈哈哈哈 /docx  你好');
-  });
-
-  it('allows inserting the same skill multiple times as separate blocks', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-rule',
-          description: 'Create Cursor rules.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-rule/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-rule',
-        },
-      ],
-    });
-
-    renderChatInput();
-
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
-
-    textbox.setSelectionRange(textbox.value.length, textbox.value.length);
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
-
-    expect(textbox).toHaveValue('/create-rule  /create-rule  ');
-    expect(screen.getAllByTestId('chat-composer-skill-token')).toHaveLength(2);
+    expect(onSend.mock.calls[0]?.[0]).not.toContain('@Research');
   });
 
   it('opens the artifact preview panel when the inline skill token is clicked', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-skill',
-          description: 'Create and refine reusable skills.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-skill',
-        },
-      ],
-    });
+    agentsState.agents = [mainAgent];
+    mockQuickSkills();
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
-    textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-
     fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByText('/create-skill'));
+    fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-skill'));
 
-    fireEvent.click(screen.getByTestId('chat-composer-skill-token'));
+    fireEvent.click(await screen.findByTestId('chat-composer-skill-token'));
 
     expect(artifactPanelMocks.openPreview).toHaveBeenCalledWith(
       expect.objectContaining({

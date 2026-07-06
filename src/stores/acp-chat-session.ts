@@ -425,14 +425,15 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const key = imageGenerationEvidenceKey({ ...evidence, sessionKey });
     if (!reserveDelivery(sessionKey, key)) return;
 
-    let thumbnails: MediaThumbnailResult = {};
-    try {
-      thumbnails = await hostApi.media.thumbnails({
-        paths: evidence.candidates.map(thumbnailEntry),
-      });
-    } catch {
-      thumbnails = {};
-    }
+    const thumbnails: MediaThumbnailResult = await (async () => {
+      try {
+        return await hostApi.media.thumbnails({
+          paths: evidence.candidates.map(thumbnailEntry),
+        });
+      } catch {
+        return {};
+      }
+    })();
 
     const latest = get();
     if (latest.activeSessionKey !== sessionKey || latest.generation !== generation) return;

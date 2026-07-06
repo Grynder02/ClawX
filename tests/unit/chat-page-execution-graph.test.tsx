@@ -67,6 +67,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
@@ -249,7 +250,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
 
     await waitFor(() => {
       expect(ensureAcpChatSubscriptions).toHaveBeenCalledTimes(1);
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '~/.openclaw/workspace' });
     });
   });
 

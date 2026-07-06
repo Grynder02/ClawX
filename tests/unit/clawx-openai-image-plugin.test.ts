@@ -22,6 +22,13 @@ describe('ClawX OpenAI image plugin request shape', () => {
 
   it('omits response_format from generated OpenAI-compatible requests', async () => {
     let requestBody = '';
+    const proxyEnvKeys = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'NO_PROXY', 'no_proxy'];
+    const previousProxyEnv = new Map(proxyEnvKeys.map((key) => [key, process.env[key]]));
+    for (const key of proxyEnvKeys) {
+      delete process.env[key];
+    }
+    process.env.NO_PROXY = '127.0.0.1,localhost';
+
     const server = http.createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -85,6 +92,13 @@ describe('ClawX OpenAI image plugin request shape', () => {
       });
     } finally {
       server.close();
+      for (const [key, value] of previousProxyEnv) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
     }
   }, 15_000);
 });

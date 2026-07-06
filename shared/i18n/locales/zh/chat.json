@@ -191,6 +191,7 @@
     },
     "composer": {
         "attachFiles": "添加文件",
+        "inputLabel": "消息输入框",
         "pickSkill": "选择技能",
         "skillButton": "技能",
         "skillPickerTitle": "{{agent}} 的快捷技能",
@@ -204,6 +205,8 @@
         "clearTarget": "清除目标 Agent",
         "targetChip": "@{{agent}}",
         "agentPickerTitle": "将下一条消息直接发送给其他 Agent",
+        "agentEmpty": "没有可用的其他 Agent",
+        "prefixMenuAriaLabel": "输入建议",
         "gatewayDisconnectedPlaceholder": "网关未连接...",
         "send": "发送",
         "stop": "停止",

@@ -176,9 +176,9 @@ export function Chat() {
   const { t } = useTranslation('chat');
 
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
-  const sessions = useChatStore((s) => s.sessions);
+  const sessions = useChatStore((s) => s.sessions ?? []);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const loadSessions = useChatStore((s) => s.loadSessions);
+  const loadSessions = useChatStore((s) => s.loadSessions ?? (() => Promise.resolve()));
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
@@ -226,7 +226,7 @@ export function Chat() {
   );
 
   useEffect(() => {
-    void fetchAgents().catch(() => undefined);
+    void Promise.resolve(fetchAgents()).catch(() => undefined);
   }, [fetchAgents]);
 
   useEffect(() => {
@@ -236,7 +236,7 @@ export function Chat() {
   useEffect(() => {
     if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
     let cancelled = false;
-    void loadSessions()
+    void Promise.resolve(loadSessions())
       .finally(() => {
         if (!cancelled) setSessionDiscoveryAttempted(true);
       })
@@ -256,11 +256,11 @@ export function Chat() {
     if (currentSession?.createdLocally) return;
     const createIfMissing = !currentSession;
     acpLoadInFlightKeyRef.current = acpLoadKey;
-    void loadAcpSession({
+    void Promise.resolve(loadAcpSession({
       sessionKey: currentSessionKey,
       cwd,
       ...(createIfMissing ? { createIfMissing: true } : {}),
-    }).then((loaded) => {
+    })).then((loaded) => {
       if (loaded && createIfMissing) {
         acknowledgeAcpSessionCreated(currentSessionKey);
       }
@@ -366,21 +366,21 @@ export function Chat() {
               if (acpActiveSessionKey !== sessionKey || acpCwd !== promptCwd) {
                 const acpLoadKey = `${sessionKey}\0${promptCwd}`;
                 acpLoadInFlightKeyRef.current = acpLoadKey;
-                let loaded = false;
-                let createIfMissing = false;
-                try {
-                  const existingSession = sessions.find((session) => session.key === sessionKey);
-                  createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
-                  loaded = await loadAcpSession({
-                    sessionKey,
-                    cwd: promptCwd,
-                    ...(createIfMissing ? { createIfMissing: true } : {}),
-                  });
-                } finally {
-                  if (acpLoadInFlightKeyRef.current === acpLoadKey) {
-                    acpLoadInFlightKeyRef.current = null;
+                const existingSession = sessions.find((session) => session.key === sessionKey);
+                const createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
+                const loaded = await (async () => {
+                  try {
+                    return await Promise.resolve(loadAcpSession({
+                      sessionKey,
+                      cwd: promptCwd,
+                      ...(createIfMissing ? { createIfMissing: true } : {}),
+                    }));
+                  } finally {
+                    if (acpLoadInFlightKeyRef.current === acpLoadKey) {
+                      acpLoadInFlightKeyRef.current = null;
+                    }
                   }
-                }
+                })();
                 if (loaded && createIfMissing) {
                   acknowledgeAcpSessionCreated(sessionKey, promptCwd);
                 }

@@ -1,7 +1,17 @@
-import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const alphaModelRef = 'custom-alpha123/model-alpha';
 const betaModelRef = 'custom-beta5678/provider/model-beta';
+const soloModelRef = 'custom-solo1234/solo-model';
+
+function stableStringify(value: unknown): string {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
+  return `{${entries.join(',')}}`;
+}
 
 test.describe('ClawX chat model picker', () => {
   test('switches the current agent model without requesting a gateway refresh', async ({ launchElectronApp }) => {
@@ -184,6 +194,103 @@ test.describe('ClawX chat model picker', () => {
         || request.path === 'gateway:start'
         || request.path === 'gateway:config.patch'
       )).toBe(false);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('shows the model selector before Send even when only one model is configured', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const now = new Date().toISOString();
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] },
+          },
+          [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+          [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 1000, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+        },
+        hostApi: {
+          [stableStringify(['settings', 'getAll', null])]: {
+            language: 'en',
+            setupComplete: true,
+          },
+          [stableStringify(['agents', 'list', null])]: {
+            success: true,
+            agents: [{
+              id: 'main',
+              name: 'Main',
+              isDefault: true,
+              modelDisplay: 'solo-model',
+              modelRef: soloModelRef,
+              overrideModelRef: soloModelRef,
+              inheritedModel: false,
+              workspace: '~/.openclaw/workspace',
+              agentDir: '~/.openclaw/agents/main/agent',
+              mainSessionKey: 'agent:main:main',
+              channelTypes: [],
+            }],
+            defaultAgentId: 'main',
+            defaultModelRef: soloModelRef,
+            configuredChannelTypes: [],
+            channelOwners: {},
+            channelAccountOwners: {},
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: 'agent:main:main', cwd: '~/.openclaw/workspace' }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['providers', 'accounts', null])]: [
+            {
+              id: 'custom-solo1234',
+              vendorId: 'custom',
+              label: 'Solo',
+              authMode: 'api_key',
+              baseUrl: 'http://127.0.0.1:3333/v1',
+              model: 'solo-model',
+              enabled: true,
+              isDefault: true,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
+          [stableStringify(['providers', 'list', null])]: [
+            { id: 'custom-solo1234', type: 'custom', name: 'Solo', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
+          ],
+          [stableStringify(['providers', 'accountKeyInfo', null])]: [
+            { accountId: 'custom-solo1234', hasKey: true, keyMasked: 'sk-***' },
+          ],
+          [stableStringify(['providers', 'vendors', null])]: [],
+          [stableStringify(['providers', 'getDefaultAccount', null])]: { accountId: 'custom-solo1234' },
+        },
+      });
+
+      const page = await getStableWindow(app);
+      await page.reload();
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('solo-model (Solo)', { timeout: 30_000 });
+      await expect(page.getByTestId('chat-composer-send')).toBeVisible();
+
+      const modelPickerPrecedesSend = await page.evaluate(() => {
+        const modelPicker = document.querySelector('[data-testid="chat-model-picker-button"]');
+        const send = document.querySelector('[data-testid="chat-composer-send"]');
+        if (!(modelPicker instanceof HTMLElement) || !(send instanceof HTMLElement)) {
+          return false;
+        }
+        return Boolean(modelPicker.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+
+      expect(modelPickerPrecedesSend).toBe(true);
     } finally {
       await closeElectronApp(app);
     }
