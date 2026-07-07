@@ -2,10 +2,21 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_WORKSPACE_BUCKET_SEGMENT = '~%2F.openclaw%2Fworkspace';
 const SESSIONS_LIST_PAYLOAD = {
   includeDerivedTitles: true,
   includeLastMessage: true,
 };
+
+type HistoryBucketKey = 'today' | 'withinWeek' | 'withinMonth' | 'older';
+
+function sessionBucketTestId(bucketKey: HistoryBucketKey): string {
+  return `session-bucket-${DEFAULT_WORKSPACE_BUCKET_SEGMENT}-${bucketKey}`;
+}
+
+function sessionBucketToggleTestId(bucketKey: HistoryBucketKey): string {
+  return `session-bucket-toggle-${DEFAULT_WORKSPACE_BUCKET_SEGMENT}-${bucketKey}`;
+}
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -73,20 +84,20 @@ test.describe('ClawX chat session date grouping', () => {
         }
       }
 
-      await expect(page.getByTestId('session-bucket-toggle-today')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('session-bucket-toggle-withinWeek')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('session-bucket-toggle-withinMonth')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.getByTestId('session-bucket-toggle-older')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.getByTestId('session-bucket-today').getByText('Today conversation')).toBeVisible();
-      await expect(page.getByTestId('session-bucket-withinWeek').getByText('Week conversation')).toBeVisible();
+      await expect(page.getByTestId(sessionBucketToggleTestId('today'))).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByTestId(sessionBucketToggleTestId('withinWeek'))).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByTestId(sessionBucketToggleTestId('withinMonth'))).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId(sessionBucketToggleTestId('older'))).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId(sessionBucketTestId('today')).getByText('Today conversation')).toBeVisible();
+      await expect(page.getByTestId(sessionBucketTestId('withinWeek')).getByText('Week conversation')).toBeVisible();
       await expect(page.getByText('Month conversation')).toHaveCount(0);
       await expect(page.getByText('Older conversation')).toHaveCount(0);
 
-      await page.getByTestId('session-bucket-toggle-withinMonth').click();
-      await page.getByTestId('session-bucket-toggle-older').click();
+      await page.getByTestId(sessionBucketToggleTestId('withinMonth')).click();
+      await page.getByTestId(sessionBucketToggleTestId('older')).click();
 
-      await expect(page.getByTestId('session-bucket-withinMonth').getByText('Month conversation')).toBeVisible();
-      await expect(page.getByTestId('session-bucket-older').getByText('Older conversation')).toBeVisible();
+      await expect(page.getByTestId(sessionBucketTestId('withinMonth')).getByText('Month conversation')).toBeVisible();
+      await expect(page.getByTestId(sessionBucketTestId('older')).getByText('Older conversation')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
@@ -156,8 +167,8 @@ test.describe('ClawX chat session date grouping', () => {
 
       await page.getByTestId('sidebar-new-chat').click();
 
-      await expect(page.getByTestId('session-bucket-today').getByText(/agent:main:session-/)).toBeVisible();
-      await expect(page.getByTestId('session-bucket-older')).toBeVisible();
+      await expect(page.getByTestId(sessionBucketTestId('today')).getByText(/agent:main:session-/)).toBeVisible();
+      await expect(page.getByTestId(sessionBucketTestId('older'))).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }

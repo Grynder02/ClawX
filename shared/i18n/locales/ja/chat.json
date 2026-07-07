@@ -145,6 +145,7 @@
     },
     "workspace": {
         "title": "ワークスペース",
+        "defaultLabel": "默认工作空间",
         "header": "Agent: {{agent}} · ディレクトリ: {{directory}}",
         "freshBadge": "今回の実行で更新",
         "pickFile": "左側のファイルを選択してプレビュー",
@@ -211,6 +212,10 @@
         "gatewayStarting": "起動中",
         "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} | PID: {{pid}}",
         "retryFailedAttachments": "失敗した添付を再試行",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "ワークスペースフォルダーを選択",
+        "workspacePickerButton": "このワークスペースを使用",
+        "workspacePickerFailed": "ワークスペース選択を開けませんでした",
         "folderDropUnsupported": "このフォルダを添付できませんでした。もう一度ドラッグするか、メッセージにフォルダパスを貼り付けてください。",
         "folderAttachment": "フォルダ",
         "skillPreviewTooltip": "SKILL.md をプレビュー",

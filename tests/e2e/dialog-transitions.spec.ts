@@ -2,10 +2,15 @@ import type { Locator } from '@playwright/test';
 import { closeElectronApp, completeSetup, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
+const DEFAULT_WORKSPACE_BUCKET_SEGMENT = '~%2F.openclaw%2Fworkspace';
 const SESSIONS_LIST_PAYLOAD = {
   includeDerivedTitles: true,
   includeLastMessage: true,
 };
+
+function defaultWorkspaceSessionBucketTestId(bucketKey: string): string {
+  return `session-bucket-${DEFAULT_WORKSPACE_BUCKET_SEGMENT}-${bucketKey}`;
+}
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -190,7 +195,7 @@ test.describe('dialog transitions', () => {
         }
       }
 
-      const sessionRow = page.getByTestId('session-bucket-today').getByText('Preserved session');
+      const sessionRow = page.getByTestId(defaultWorkspaceSessionBucketTestId('today')).getByText('Preserved session');
       await expect(sessionRow).toBeVisible();
       await sessionRow.hover();
       await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();

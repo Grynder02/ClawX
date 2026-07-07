@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
+const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
 const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
@@ -65,6 +67,15 @@ vi.mock('@/lib/host-api', () => ({
         body: JSON.stringify(input),
       }),
     },
+    dialog: {
+      open: hostApiDialogOpenMock,
+    },
+  },
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: toastErrorMock,
   },
 }));
 
@@ -100,10 +111,20 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Stop';
     case 'composer.gatewayConnected':
       return 'connected';
+    case 'composer.gatewayStarting':
+      return 'starting';
     case 'composer.gatewayStatus':
       return `gateway ${String(vars?.state ?? '')} | port: ${String(vars?.port ?? '')} ${String(vars?.pid ?? '')}`.trim();
     case 'composer.retryFailedAttachments':
       return 'Retry failed attachments';
+    case 'composer.workspacePrefix':
+      return String(vars?.workspace ?? '');
+    case 'composer.workspacePickerTitle':
+      return 'Select workspace folder';
+    case 'composer.workspacePickerButton':
+      return 'Use workspace';
+    case 'composer.workspacePickerFailed':
+      return 'Could not open workspace picker';
     case 'composer.skillPreviewTooltip':
       return 'Preview SKILL.md';
     case 'composer.skillPreviewNotFound':
@@ -139,7 +160,193 @@ describe('ChatInput agent targeting', () => {
     providersState.defaultAccountId = null;
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
+    vi.mocked(hostApiDialogOpenMock).mockReset();
+    toastErrorMock.mockReset();
     artifactPanelMocks.openPreview.mockReset();
+  });
+
+  it('renders editable workspace selector in the composer footer', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveTextContent('~/workspace/ClawX');
+    expect(button).toHaveAttribute('title', '/Users/alex/workspace/ClawX');
+    expect(button).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('renders read-only workspace selector for bound sessions', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="默认工作空间"
+          workspacePath="~/.openclaw/workspace"
+          workspaceReadOnly
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveTextContent('默认工作空间');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('workspace selector opens a native directory picker for editable sessions', async () => {
+    const onSelectWorkspace = vi.fn();
+    vi.mocked(hostApiDialogOpenMock).mockResolvedValue({
+      canceled: false,
+      filePaths: ['/Users/alex/next-project'],
+    });
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+
+    await waitFor(() => {
+      expect(hostApiDialogOpenMock).toHaveBeenCalledWith({
+        title: 'Select workspace folder',
+        buttonLabel: 'Use workspace',
+        defaultPath: '/Users/alex/project',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+    });
+    expect(onSelectWorkspace).toHaveBeenCalledWith('/Users/alex/next-project');
+  });
+
+  it('read-only workspace selector does not open the native picker', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Default workspace"
+          workspacePath="~/.openclaw/workspace"
+          workspaceReadOnly
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('disabled workspace selector is announced disabled and does not open the native picker', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          disabled
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('sending workspace selector is announced disabled and does not open the native picker', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          sending
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('workspace selector without a selection callback is announced disabled and does not open the native picker', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+  });
+
+  it('workspace selector reports dialog failures without selecting a workspace', async () => {
+    const onSelectWorkspace = vi.fn();
+    vi.mocked(hostApiDialogOpenMock).mockRejectedValue(new Error('dialog failed'));
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith('Could not open workspace picker');
+    });
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
   });
 
   it('hides the @agent picker when only one agent is configured', () => {

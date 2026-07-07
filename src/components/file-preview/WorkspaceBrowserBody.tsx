@@ -1,7 +1,7 @@
 /**
  * Inline workspace browser body — left tree + right preview.
  *
- * Strictly scoped to the current agent's `agent.workspace` directory.
+ * Scoped to the effective chat workspace, falling back to the current agent's workspace.
  * Used by `ArtifactPanel`'s browser tab (split-pane on the chat page).
  */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -74,6 +74,10 @@ function toOpenState(expanded: Set<string>): Record<string, boolean> {
 
 export interface WorkspaceBrowserBodyProps {
   agent: AgentSummary | null;
+  /** Effective workspace root. Falls back to agent.workspace for older call sites. */
+  workspacePath?: string | null;
+  /** Optional display label for workspacePath. */
+  workspaceLabel?: string;
   /** Used to mark "Added this run" badges on the tree. */
   runStartedAt?: number | null;
   /** Bumping this number triggers a tree reload (e.g. after AI run idles). */
@@ -103,6 +107,8 @@ type FileState =
 
 export function WorkspaceBrowserBody({
   agent,
+  workspacePath,
+  workspaceLabel,
   runStartedAt,
   refreshSignal,
   compact = false,
@@ -121,10 +127,13 @@ export function WorkspaceBrowserBody({
   const treeContainerRef = useRef<HTMLDivElement | null>(null);
   const [treeHeight, setTreeHeight] = useState(0);
 
-  const workspace = agent?.workspace ?? '';
+  const explicitWorkspace = workspacePath?.trim() ?? '';
+  const workspace = explicitWorkspace || agent?.workspace || '';
   const treeScope = `${agent?.id ?? ''}:${workspace}`;
   const openRelPaths = openRelPathState.scope === treeScope ? openRelPathState.paths : null;
-  const workspaceDisplayPath = formatWorkspacePath(workspace);
+  const workspaceDisplayPath = explicitWorkspace
+    ? workspaceLabel || formatWorkspacePath(workspace)
+    : formatWorkspacePath(workspace);
   const agentDisplayName = agent?.name?.trim() || '-';
   const directoryDisplayPath = workspaceDisplayPath || '-';
   const workspaceHeaderTitle = t('workspace.header', {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { getSessionActivityMs, getSessionBucket } from '@/components/layout/session-buckets';
+import {
+  getWorkspaceBucketStateKey,
+  getWorkspaceBucketTestId,
+  getWorkspaceBucketToggleTestId,
+} from '@/components/layout/Sidebar';
 
 describe('sidebar session date buckets', () => {
   it('uses the timestamp embedded in a locally-created session key as activity fallback', () => {
@@ -40,5 +45,17 @@ describe('sidebar session date buckets', () => {
     expect(getSessionBucket(new Date(2026, 3, 18, 0, 0).getTime(), nowMs)).toBe('withinMonth');
     expect(getSessionBucket(new Date(2026, 3, 17, 23, 59, 59, 999).getTime(), nowMs)).toBe('older');
     expect(getSessionBucket(0, nowMs)).toBe('older');
+  });
+
+  it('uses workspace-scoped bucket state keys and test ids', () => {
+    expect(getWorkspaceBucketStateKey('/repo/a', 'today')).not.toBe(getWorkspaceBucketStateKey('/repo/b', 'today'));
+    expect(getWorkspaceBucketTestId('/repo/a', 'today')).not.toBe(getWorkspaceBucketTestId('/repo/b', 'today'));
+    expect(getWorkspaceBucketToggleTestId('/repo/a', 'today')).not.toBe(
+      getWorkspaceBucketToggleTestId('/repo/b', 'today'),
+    );
+    expect(getWorkspaceBucketTestId('/repo/a-b', 'today')).not.toBe(getWorkspaceBucketTestId('/repo/a/b', 'today'));
+    expect(getWorkspaceBucketToggleTestId('/repo/a-b', 'today')).not.toBe(
+      getWorkspaceBucketToggleTestId('/repo/a/b', 'today'),
+    );
   });
 });

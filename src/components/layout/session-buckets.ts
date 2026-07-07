@@ -1,4 +1,10 @@
 import type { ChatSession } from '@/stores/chat';
+import {
+  DEFAULT_WORKSPACE_CWD,
+  getSessionWorkspaceForGrouping,
+  getWorkspaceDisplayLabel,
+  isDefaultWorkspacePath,
+} from '@/lib/workspace-context';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -7,6 +13,19 @@ export type SessionBucketKey =
   | 'withinWeek'
   | 'withinMonth'
   | 'older';
+
+const SESSION_BUCKET_KEYS: SessionBucketKey[] = ['today', 'withinWeek', 'withinMonth', 'older'];
+
+export type SessionBucket<TSession> = {
+  key: SessionBucketKey;
+  sessions: TSession[];
+};
+
+export type WorkspaceSessionGroup<TSession> = {
+  workspacePath: string;
+  label: string;
+  buckets: Array<SessionBucket<TSession>>;
+};
 
 export function getSessionBucket(activityMs: number, nowMs: number): SessionBucketKey {
   if (!activityMs || activityMs <= 0) return 'older';
@@ -40,4 +59,51 @@ export function getSessionActivityMs(
   }
 
   return getSessionCreatedAtMsFromKey(session.key) ?? 0;
+}
+
+function createSessionBuckets<TSession>(): Array<SessionBucket<TSession>> {
+  return SESSION_BUCKET_KEYS.map((key) => ({ key, sessions: [] }));
+}
+
+function getCanonicalWorkspacePathForGrouping(
+  session: ChatSession,
+  globalWorkspace?: string | null,
+): string {
+  const workspacePath = getSessionWorkspaceForGrouping(session, globalWorkspace);
+  return isDefaultWorkspacePath(workspacePath) ? DEFAULT_WORKSPACE_CWD : workspacePath;
+}
+
+export function groupSessionsByWorkspace<TSession extends ChatSession>(
+  sessions: readonly TSession[],
+  sessionLastActivity: Record<string, number>,
+  nowMs: number,
+  defaultWorkspaceLabel: string,
+  globalWorkspace?: string | null,
+): Array<WorkspaceSessionGroup<TSession>> {
+  const groups: Array<WorkspaceSessionGroup<TSession>> = [];
+  const groupByWorkspace = new Map<string, WorkspaceSessionGroup<TSession>>();
+
+  for (const { session, activityMs } of sessions
+    .map((session) => ({
+      session,
+      activityMs: getSessionActivityMs(session, sessionLastActivity),
+    }))
+    .sort((a, b) => b.activityMs - a.activityMs)) {
+    const workspacePath = getCanonicalWorkspacePathForGrouping(session, globalWorkspace);
+    let group = groupByWorkspace.get(workspacePath);
+    if (!group) {
+      group = {
+        workspacePath,
+        label: getWorkspaceDisplayLabel(workspacePath, defaultWorkspaceLabel),
+        buckets: createSessionBuckets<TSession>(),
+      };
+      groupByWorkspace.set(workspacePath, group);
+      groups.push(group);
+    }
+
+    const bucket = group.buckets.find((candidate) => candidate.key === getSessionBucket(activityMs, nowMs));
+    bucket?.sessions.push(session);
+  }
+
+  return groups;
 }

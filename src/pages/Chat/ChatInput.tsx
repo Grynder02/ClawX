@@ -46,6 +46,10 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  workspaceLabel?: string;
+  workspacePath?: string;
+  workspaceReadOnly?: boolean;
+  onSelectWorkspace?: (path: string) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -191,7 +195,16 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onStop,
+  disabled = false,
+  sending = false,
+  workspaceLabel,
+  workspacePath,
+  workspaceReadOnly = false,
+  onSelectWorkspace,
+}: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
@@ -269,9 +282,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
   const inputDisabled = disabled;
+  const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
-
   useEffect(() => {
     void refreshProviderSnapshot();
   }, [refreshProviderSnapshot]);
@@ -468,6 +481,22 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       textareaRef.current?.focus();
     }
   }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
+
+  const handleSelectWorkspace = useCallback(async () => {
+    if (workspaceSelectorDisabled || !onSelectWorkspace) return;
+    try {
+      const result = await hostApi.dialog.open({
+        title: t('composer.workspacePickerTitle'),
+        buttonLabel: t('composer.workspacePickerButton'),
+        defaultPath: workspacePath,
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      const selected = result.filePaths[0]?.trim();
+      if (!result.canceled && selected) onSelectWorkspace(selected);
+    } catch {
+      toast.error(t('composer.workspacePickerFailed'));
+    }
+  }, [onSelectWorkspace, t, workspacePath, workspaceSelectorDisabled]);
 
   // ── File staging via native dialog / Electron drag-drop paths ──
 
@@ -1068,13 +1097,13 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             </Button>
           </div>
         </div>
-        <div className="mt-2.5 flex items-center justify-between gap-2 text-tiny text-muted-foreground/60 px-4">
-          <div className="flex items-center gap-1.5">
+        <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2 text-tiny text-muted-foreground/60 px-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             <div className={cn(
-              "w-1.5 h-1.5 rounded-full",
+              "h-1.5 w-1.5 shrink-0 rounded-full",
               isGatewayUsable ? "bg-green-500/80" : "bg-red-500/80",
             )} />
-            <span>
+            <span className="min-w-0 truncate">
               {t('composer.gatewayStatus', {
                 state: isGatewayUsable
                   ? t('composer.gatewayConnected')
@@ -1085,23 +1114,46 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 pid: gatewayStatus.pid ?? '',
               })}
             </span>
+            {workspaceLabel && workspacePath && (
+              <button
+                type="button"
+                data-testid="chat-workspace-selector"
+                title={workspacePath}
+                aria-disabled={workspaceSelectorDisabled ? 'true' : undefined}
+                onClick={handleSelectWorkspace}
+                className={cn(
+                  'ml-2 inline-flex min-w-0 max-w-[240px] shrink items-center gap-1 rounded-full border border-black/10 px-2 py-0.5',
+                  'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:border-white/10 dark:bg-white/[0.04]',
+                  workspaceSelectorDisabled
+                    ? 'cursor-default opacity-80'
+                    : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                )}
+              >
+                <FolderOpen className="h-3 w-3 shrink-0" />
+                <span className="min-w-0 truncate">
+                  {t('composer.workspacePrefix', { workspace: workspaceLabel })}
+                </span>
+              </button>
+            )}
             {chatComposerStatusComponents.map((Component, index) => (
               <Component key={`${index}`} gatewayStatus={gatewayStatus} />
             ))}
           </div>
-          {hasFailedAttachments && (
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-tiny"
-              onClick={() => {
-                setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
-                void pickFiles();
-              }}
-            >
-              {t('composer.retryFailedAttachments')}
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            {hasFailedAttachments && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-tiny"
+                onClick={() => {
+                  setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
+                  void pickFiles();
+                }}
+              >
+                {t('composer.retryFailedAttachments')}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

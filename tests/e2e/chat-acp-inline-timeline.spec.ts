@@ -5,6 +5,7 @@ const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
 const REVIEWER_SESSION_KEY = 'agent:reviewer:main';
 const REVIEWER_WORKSPACE = '/workspace/reviewer';
+const DEFAULT_WORKSPACE_BUCKET_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
@@ -15,6 +16,10 @@ function stableStringify(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
   return `{${entries.join(',')}}`;
+}
+
+function defaultWorkspaceSessionBucketTestId(bucketKey: string): string {
+  return `session-bucket-${DEFAULT_WORKSPACE_BUCKET_SEGMENT}-${bucketKey}`;
 }
 
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
@@ -726,7 +731,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app);
 
-      await expect(page.getByTestId('session-bucket-today')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(defaultWorkspaceSessionBucketTestId('today'))).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('sidebar-session-agent:main:heartbeat')).toHaveCount(0);
       await expect(page.getByTestId('sidebar-session-agent:main:session-1710000000000')).toBeVisible();
     } finally {

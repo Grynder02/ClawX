@@ -139,6 +139,48 @@ describe('WorkspaceBrowserBody', () => {
     vi.clearAllMocks();
   });
 
+  it('loads the explicit workspace path instead of the agent workspace', async () => {
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/agent/workspace' }}
+        workspacePath="/session/workspace"
+        workspaceLabel="~/session/workspace"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadWorkspaceTree).toHaveBeenCalledWith(
+        '/session/workspace',
+        expect.objectContaining({ includeHidden: true, runStartedAt: null }),
+      );
+    });
+    expect(screen.getByTestId('workspace-header-title')).toHaveTextContent(
+      'Agent：Main Agent / 目录：~/session/workspace',
+    );
+    expect(screen.getByTestId('workspace-header-title')).not.toHaveTextContent('/agent/workspace');
+  });
+
+  it('uses the fallback agent workspace label when the explicit workspace path is blank', async () => {
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/agent/workspace' }}
+        workspacePath="   "
+        workspaceLabel="~/session/workspace"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadWorkspaceTree).toHaveBeenCalledWith(
+        '/agent/workspace',
+        expect.objectContaining({ includeHidden: true, runStartedAt: null }),
+      );
+    });
+    expect(screen.getByTestId('workspace-header-title')).toHaveTextContent(
+      'Agent：Main Agent / 目录：/agent/workspace',
+    );
+    expect(screen.getByTestId('workspace-header-title')).not.toHaveTextContent('~/session/workspace');
+  });
+
   it('loads hidden files by default and shows the agent and directory in one header title', async () => {
     render(
       <WorkspaceBrowserBody
