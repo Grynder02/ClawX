@@ -20,3 +20,5 @@ Rules:
 - deleting the last account may leave the default account and OpenClaw default model unset
 - replacement defaults must be persisted through the provider service and synchronized to OpenClaw before the deleted provider runtime config is removed
 - tests must cover deleting the default account, a non-default account, and the last account
+- provider flows with an implicit model default must share that default between account creation and OpenClaw runtime synchronization
+- an updated implicit model default must not overwrite an explicit model already stored on an existing account

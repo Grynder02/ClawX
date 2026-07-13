@@ -6,6 +6,7 @@ import { getProviderService } from '../services/providers/provider-service';
 import { getSecretStore } from '../services/secrets/secret-store';
 import {
   ensureOpenClawProviderAgentRuntimePins,
+  OPENAI_CODEX_OAUTH_DEFAULT_MODEL_ID,
   OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   saveOAuthTokenToOpenClaw,
   setOpenClawDefaultModelWithOverride,
@@ -19,7 +20,6 @@ import {
 export type BrowserOAuthProviderType = 'openai';
 
 const OPENAI_RUNTIME_PROVIDER_ID = 'openai';
-const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.5';
 
 class BrowserOAuthManager extends EventEmitter {
   private activeAccountId: string | null = null;
@@ -135,7 +135,7 @@ class BrowserOAuthManager extends EventEmitter {
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
     const runtimeProviderId = OPENAI_RUNTIME_PROVIDER_ID;
-    const defaultModel = OPENAI_OAUTH_DEFAULT_MODEL;
+    const defaultModel = OPENAI_CODEX_OAUTH_DEFAULT_MODEL_ID;
     const accountLabelDefault = 'OpenAI Codex';
     const oauthTokenEmail = typeof token.email === 'string' ? token.email : undefined;
     const oauthTokenSubject = typeof token.accountId === 'string' ? token.accountId : undefined;

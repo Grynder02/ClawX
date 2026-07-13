@@ -55,6 +55,7 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
   removeProviderKeyFromOpenClaw: mocks.removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw: mocks.saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw: mocks.saveProviderKeyToOpenClaw,
+  OPENAI_CODEX_OAUTH_DEFAULT_MODEL_ID: 'gpt-5.6',
   OPENAI_CODEX_OAUTH_PROVIDER_CONFIG: {
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     api: 'openai-chatgpt-responses',
@@ -234,7 +235,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(gateway.debouncedRestart).not.toHaveBeenCalled();
   });
 
-  it('uses gpt-5.5 as the browser OAuth default model for OpenAI', async () => {
+  it('uses gpt-5.6 as the browser OAuth default model for OpenAI', async () => {
     mocks.getProvider.mockResolvedValue(
       createProvider({
         id: 'openai-personal',
@@ -257,7 +258,7 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
       'openai',
-      'openai/gpt-5.5',
+      'openai/gpt-5.6',
       {
         baseUrl: 'https://chatgpt.com/backend-api/codex',
         api: 'openai-chatgpt-responses',

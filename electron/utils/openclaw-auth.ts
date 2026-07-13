@@ -1842,6 +1842,8 @@ const OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME: Record<string, string> = {
 };
 
 /** Runtime models.providers entry for OpenAI Codex OAuth accounts. */
+export const OPENAI_CODEX_OAUTH_DEFAULT_MODEL_ID = 'gpt-5.6';
+
 export const OPENAI_CODEX_OAUTH_PROVIDER_CONFIG = {
   baseUrl: OPENAI_CODEX_OAUTH_BASE_URL,
   api: 'openai-chatgpt-responses' as const,

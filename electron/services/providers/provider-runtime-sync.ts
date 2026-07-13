@@ -13,6 +13,7 @@ import {
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw,
+  OPENAI_CODEX_OAUTH_DEFAULT_MODEL_ID,
   OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
@@ -30,7 +31,8 @@ import { listAgentsSnapshot } from '../../utils/agent-config';
 
 /** OpenClaw Codex OAuth hooks only apply to the canonical `openai` provider id. */
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai';
-const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
+const OPENAI_OAUTH_DEFAULT_MODEL_REF =
+  `${OPENAI_OAUTH_RUNTIME_PROVIDER}/${OPENAI_CODEX_OAUTH_DEFAULT_MODEL_ID}`;
 
 /**
  * Provider types that are not in the built-in provider registry (no `providerConfig.api`).

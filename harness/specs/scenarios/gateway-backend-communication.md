@@ -59,3 +59,5 @@ Renderer code must not own transport selection, direct IPC channels, direct Gate
 Renderer code must not create direct Gateway WebSocket connections. Gateway frame diagnostics must be emitted by Main-process Gateway logging.
 
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark.
+
+Provider authentication flows that choose an implicit runtime model are also part of this scenario. OpenAI browser OAuth account creation and default-provider synchronization must consume the same default-model constant so persisted account state and OpenClaw runtime state cannot drift.
